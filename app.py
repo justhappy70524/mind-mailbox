@@ -1,23 +1,29 @@
 from datetime import datetime
+import gspread
 import pandas as pd
 import streamlit as st
 
-# 페이지 설정
 st.set_page_config(page_title="마음 우체통", page_icon="📮", layout="centered")
 
 st.title("📮 오늘의 한마디 마음 우체통")
 st.write("오늘 하루 마음속에 담아둔 이야기가 있나요? 따뜻한 한마디를 남겨주세요.")
 
-# 구글 시트 연결 (Streamlit GsheetsConnection 활용)
+# --- 구글 시트 데이터 불러오기 (gspread 이용) ---
+SHEET_URL = st.secrets["connections"]["gsheets"]["spreadsheet"]
+
+
+def get_sheet():
+  # 서비스 계정이 없어도 Public 편집 가능 시트에 접근할 수 있도록 연동
+  gc = gspread.public_authorize()
+  sh = gc.open_by_url(SHEET_URL)
+  return sh.get_worksheet(0)
+
+
 try:
-  conn = st.connection("gsheets", type="gsheets")
-  # 시트에서 기존 데이터 불러오기 (ttl=0으로 캐시 없이 실시간 로드)
-  df = conn.read(ttl=0)
-except Exception as e:
-  st.error(
-      "구글 시트 연결 설정이 완료되지 않았거나 주소가 잘못되었습니다. Settings"
-      " > Secrets를 확인해 주세요!"
-  )
+  # 판다스로 시트 데이터 실시간 읽기
+  csv_url = SHEET_URL.replace("/edit", "/export?format=csv")
+  df = pd.read_csv(csv_url)
+except Exception:
   df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
 
 # --- 마음 남기기 입력 폼 ---
@@ -37,41 +43,27 @@ if submitted:
 
     now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 새로운 데이터 행 생성
-    new_data = pd.DataFrame(
-        [{"닉네임": nickname, "한마디": message, "시간": now_time}]
-    )
-
     try:
-      # 기존 시트 데이터와 새 데이터 합치기
-      if df.empty or "한마디" not in df.columns:
-        updated_df = new_data
-      else:
-        updated_df = pd.concat([df, new_data], ignore_index=True)
+      # gspread를 이용해 구글 시트 맨 아래 줄에 직접 추가
+      gc = gspread.public_authorize()
+      sh = gc.open_by_url(SHEET_URL)
+      worksheet = sh.get_worksheet(0)
 
-      # 구글 시트에 최종 업데이트 반영
-      conn.update(data=updated_df)
+      worksheet.append_row([nickname, message, now_time])
 
       st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
       st.balloons()
       st.rerun()
     except Exception as e:
-      st.error(f"구글 시트 저장 중 문제가 발생했습니다: {e}")
+      st.error(f"저장 중 오류 발생: {e}")
 
 # --- 다른 사람들의 마음 보관함 ---
 st.markdown("---")
 st.subheader("📬 다른 사람들의 마음 보관함")
 
-# 데이터프레임 유효성 검사 및 출력
-if (
-    df is None
-    or df.empty
-    or "한마디" not in df.columns
-    or df["한마디"].dropna().empty
-):
+if df.empty or "한마디" not in df.columns or df["한마디"].dropna().empty:
   st.info("아직 등록된 마음이 없습니다. 첫 번째 한마디의 주인공이 되어보세요!")
 else:
-  # 최신글이 위로 오도록 역순 정렬
   for index, row in df.iloc[::-1].iterrows():
     nick = row.get("닉네임", "익명")
     msg = row.get("한마디", "")
