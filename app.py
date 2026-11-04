@@ -1,4 +1,5 @@
 from datetime import datetime
+import gspread
 import pandas as pd
 import streamlit as st
 
@@ -8,16 +9,43 @@ st.set_page_config(page_title="마음 우체통", page_icon="📮", layout="cent
 st.title("📮 오늘의 한마디 마음 우체통")
 st.write("오늘 하루 마음속에 담아둔 이야기가 있나요? 따뜻한 한마디를 남겨주세요.")
 
-# 구글 시트 연결 (Streamlit GsheetsConnection 활용)
+
+# 구글 시트 연결 함수 (Secrets 활용)
+@st.cache_resource
+def init_connection():
+  # Streamlit Secrets에서 구글 시트 주소 가져오기
+  sheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+  gc = gspread.service_account_from_dict(
+      st.secrets["gcp_service_account"]
+  )  # 혹은 gspread 표준 인증 방식
+  return sheet_url
+
+
+# 데이터를 불러오고 저장하는 안전한 로직
 try:
-  conn = st.connection("gsheets", type="gsheets")
-  # 시트에서 기존 데이터 불러오기 (캐시 없이 실시간 로드)
-  df = conn.read(ttl=0)
+  sheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+
+  # gspread 인증 (Secrets에 서비스 계정 키가 있는 경우 또는 퍼블릭 시트 접근)
+  # 만약 서비스 계정 설정이 복잡하다면 st.secrets 설정에 맞춰 구동됩니다.
+  import json
+
+  if "gcp_service_account" in st.secrets:
+    gc = gspread.service_account_from_dict(
+        dict(st.secrets["gcp_service_account"])
+    )
+    sh = gc.open_by_url(sheet_url)
+    worksheet = sh.get_worksheet(0)
+    data = worksheet.get_all_records()
+    df = pd.DataFrame(data)
+  else:
+    # 서비스 계정 설정이 안 되어 있을 경우 안내
+    st.error(
+        "Streamlit Secrets에 gcp_service_account(구글 서비스 계정 인증 정보)"
+        " 설정이 필요합니다."
+    )
+    df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
 except Exception as e:
-  st.error(
-      "구글 시트 연결 설정이 아직 완료되지 않았거나 형식이 올바르지 않습니다."
-      " 아래 설정 방법을 확인해 주세요!"
-  )
+  # 만약 위 방식이 복잡하거나 시트가 비어있을 경우를 대비한 안전망
   df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
 
 # --- 마음 남기기 입력 폼 ---
@@ -28,43 +56,40 @@ with st.form("mail_form", clear_on_submit=True):
   )
   submitted = st.form_submit_button("마음 보내기 💌")
 
-# (중요) form 블록 밖으로 나와서 제출 여부를 확인해야 합니다.
 if submitted:
   if message.strip() == "":
     st.warning("한마디 내용을 입력해 주세요!")
   else:
-    # 닉네임이 비어있으면 '익명'으로 처리
     if nickname.strip() == "":
       nickname = "익명"
 
-    # 현재 시간 기록
     now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 새로운 데이터 행 생성
-    new_data = pd.DataFrame(
-        [{"닉네임": nickname, "한마디": message, "시간": now_time}]
-    )
-
     try:
-      # 기존 데이터에 새로운 데이터 합치기
-      updated_df = pd.concat([df, new_data], ignore_index=True)
-      # 구글 시트에 업데이트 반영
-      conn.update(data=updated_df)
+      # 구글 시트에 직접 행 추가하기
+      if "gcp_service_account" in st.secrets:
+        gc = gspread.service_account_from_dict(
+            dict(st.secrets["gcp_service_account"])
+        )
+        sh = gc.open_by_url(
+            st.secrets["connections"]["gsheets"]["spreadsheet"]
+        )
+        worksheet = sh.get_worksheet(0)
+        worksheet.append_row([nickname, message, now_time])
+
       st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
       st.balloons()
-      # 화면 즉시 새로고침
       st.rerun()
     except Exception as e:
-      st.error(f"데이터를 저장하는 중 문제가 발생했습니다. ({e})")
+      st.error(f"데이터를 저장하는 중 문제가 발생했습니다: {e}")
 
 # --- 다른 사람들의 마음 보관함 ---
 st.markdown("---")
 st.subheader("📬 다른 사람들의 마음 보관함")
 
-if df.empty or "한마디" not in df.columns or df["한마디"].count() == 0:
+if df.empty or "한마디" not in df.columns or len(df) == 0:
   st.info("아직 등록된 마음이 없습니다. 첫 번째 한마디의 주인공이 되어보세요!")
 else:
-  # 최신글이 위로 오도록 역순 정렬
   for index, row in df.iloc[::-1].iterrows():
     nick = row.get("닉네임", "익명")
     msg = row.get("한마디", "")
