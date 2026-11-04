@@ -1,6 +1,6 @@
 from datetime import datetime
-import gspread
 import pandas as pd
+import requests
 import streamlit as st
 
 st.set_page_config(page_title="마음 우체통", page_icon="📮", layout="centered")
@@ -8,19 +8,20 @@ st.set_page_config(page_title="마음 우체통", page_icon="📮", layout="cent
 st.title("📮 오늘의 한마디 마음 우체통")
 st.write("오늘 하루 마음속에 담아둔 이야기가 있나요? 따뜻한 한마디를 남겨주세요.")
 
-# --- 구글 시트 데이터 불러오기 (gspread 이용) ---
-SHEET_URL = st.secrets["connections"]["gsheets"]["spreadsheet"]
-
-
-def get_sheet():
-  # 서비스 계정이 없어도 Public 편집 가능 시트에 접근할 수 있도록 연동
-  gc = gspread.public_authorize()
-  sh = gc.open_by_url(SHEET_URL)
-  return sh.get_worksheet(0)
-
-
+# 구글 시트 링크 및 웹 앱 URL 불러오기
 try:
-  # 판다스로 시트 데이터 실시간 읽기
+  SHEET_URL = st.secrets["connections"]["gsheets"]["spreadsheet"]
+  WEBAPP_URL = st.secrets["connections"]["gsheets"]["webapp_url"]
+except Exception:
+  st.error(
+      "Settings > Secrets에 spreadsheet와 webapp_url이 올바르게 설정되었는지"
+      " 확인해 주세요!"
+  )
+  SHEET_URL = ""
+  WEBAPP_URL = ""
+
+# 구글 시트 데이터를 CSV로 읽어와 화면에 표시
+try:
   csv_url = SHEET_URL.replace("/edit", "/export?format=csv")
   df = pd.read_csv(csv_url)
 except Exception:
@@ -37,6 +38,8 @@ with st.form("mail_form", clear_on_submit=True):
 if submitted:
   if message.strip() == "":
     st.warning("한마디 내용을 입력해 주세요!")
+  elif not WEBAPP_URL:
+    st.error("웹 앱 URL(webapp_url) 설정이 누락되었습니다.")
   else:
     if nickname.strip() == "":
       nickname = "익명"
@@ -44,16 +47,16 @@ if submitted:
     now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-      # gspread를 이용해 구글 시트 맨 아래 줄에 직접 추가
-      gc = gspread.public_authorize()
-      sh = gc.open_by_url(SHEET_URL)
-      worksheet = sh.get_worksheet(0)
+      # 앱스 스크립트 웹 앱으로 데이터 전송 (쓰기)
+      payload = {"nickname": nickname, "message": message, "time": now_time}
+      response = requests.post(WEBAPP_URL, json=payload)
 
-      worksheet.append_row([nickname, message, now_time])
-
-      st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
-      st.balloons()
-      st.rerun()
+      if response.status_code == 200:
+        st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
+        st.balloons()
+        st.rerun()
+      else:
+        st.error("전송에 실패했습니다. 다시 시도해 주세요.")
     except Exception as e:
       st.error(f"저장 중 오류 발생: {e}")
 
@@ -64,6 +67,7 @@ st.subheader("📬 다른 사람들의 마음 보관함")
 if df.empty or "한마디" not in df.columns or df["한마디"].dropna().empty:
   st.info("아직 등록된 마음이 없습니다. 첫 번째 한마디의 주인공이 되어보세요!")
 else:
+  # 최신 글이 위로 오도록 역순 정렬
   for index, row in df.iloc[::-1].iterrows():
     nick = row.get("닉네임", "익명")
     msg = row.get("한마디", "")
