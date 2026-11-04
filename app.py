@@ -36,7 +36,7 @@ if submitted:
     if nickname.strip() == "":
       nickname = "익명"
 
-    # 현재 시간 기록 (한국 시간 기준 포맷 등 필요 시 적용)
+    # 현재 시간 기록
     now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # 새로운 데이터 행 생성
@@ -91,5 +91,5 @@ else:
                     <p style="margin-top: 8px; margin-bottom: 0; font-size: 1.05rem;">{msg}</p>
                 </div>
                 """,
-            unsafe_allow-html=True,
+            unsafe_allow_html=True,
         )
