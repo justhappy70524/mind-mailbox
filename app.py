@@ -1,59 +1,95 @@
-import json
-import os
+from datetime import datetime
+import pandas as pd
 import streamlit as st
 
-# 페이지 기본 설정
-st.set_page_config(
-    page_title="마음 우체통", page_icon="📮", layout="centered"
-)
+# 페이지 설정
+st.set_page_config(page_title="마음 우체통", page_icon="📮", layout="centered")
 
 st.title("📮 오늘의 한마디 마음 우체통")
 st.write("오늘 하루 마음속에 담아둔 이야기가 있나요? 따뜻한 한마디를 남겨주세요.")
 
-# 메시지를 저장할 파일 이름
-DATA_FILE = "messages.json"
+# 구글 시트 연결 (Streamlit GsheetsConnection 활용)
+try:
+  conn = st.connection("gsheets", type="gsheets")
+  # 시트에서 기존 데이터 불러오기 (캐시 없이 실시간 로드)
+  df = conn.read(ttl=0)
+except Exception as e:
+  st.error(
+      "구글 시트 연결 설정이 아직 완료되지 않았거나 형식이 올바르지 않습니다."
+      " 아래 설정 방법을 확인해 주세요!"
+  )
+  df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
 
-
-# 기존 메시지 불러오기 함수
-def load_messages():
-  if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-      return json.load(f)
-  return []
-
-
-# 메시지 저장하기 함수
-def save_messages(messages):
-  with open(DATA_FILE, "w", encoding="utf-8") as f:
-    json.dump(messages, f, ensure_ascii=False, indent=4)
-
-
-messages = load_messages()
-
-# 입력 폼 만들기
-with st.form("message_form"):
+# --- 마음 남기기 입력 폼 ---
+with st.form("mail_form", clear_on_submit=True):
   nickname = st.text_input("닉네임 (비워두면 익명)", placeholder="따뜻한 사람")
-  content = st.text_input(
+  message = st.text_area(
       "오늘의 한마디", placeholder="오늘 하루도 정말 고생 많았어요!"
   )
-  submit_button = st.form_submit_button(label="마음 보내기 💌")
+  submitted = st.form_submit_button("마음 보내기 💌")
 
-  if submit_button:
-    if content.strip() == "":
-      st.warning("메시지 내용을 입력해주세요!")
-    else:
-      new_msg = {"nickname": nickname if nickname else "익명", "content": content}
-      messages.insert(0, new_msg)  # 최신 글이 위로 오도록 추가
-      save_messages(messages)
-      st.success("소중한 마음이 우체통에 안전하게 전달되었습니다! 💛")
+if submitted:
+  if message.strip() == "":
+    st.warning("한마디 내용을 입력해 주세요!")
+  else:
+    # 닉네임이 비어있으면 '익명'으로 처리
+    if nickname.strip() == "":
+      nickname = "익명"
+
+    # 현재 시간 기록 (한국 시간 기준 포맷 등 필요 시 적용)
+    now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 새로운 데이터 행 생성
+    new_data = pd.DataFrame(
+        [{"닉네임": nickname, "한마디": message, "시간": now_time}]
+    )
+
+    try:
+      # 기존 데이터에 새로운 데이터 합치기
+      updated_df = pd.concat([df, new_data], ignore_index=True)
+
+      # 구글 시트에 업데이트 반영
+      conn.update(data=updated_df)
+
+      st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
+      st.balloons()
+      # 화면 즉시 새로고침
       st.rerun()
+    except Exception as e:
+      st.error(
+          f"데이터를 저장하는 중 문제가 발생했습니다. (Secrets 설정을 확인해"
+          f" 주세요)"
+      )
 
-st.divider()
-
-# 다른 사람들의 메시지 보여주기
+# --- 다른 사람들의 마음 보관함 ---
+st.markdown("---")
 st.subheader("📬 다른 사람들의 마음 보관함")
-if not messages:
-  st.info("아직 등록된 마음이 없어요. 첫 번째 한마디의 주인공이 되어보세요!")
+
+if df.empty or "한마디" not in df.columns or df["한마디"].count() == 0:
+  st.info("아직 등록된 마음이 없습니다. 첫 번째 한마디의 주인공이 되어보세요!")
 else:
-  for msg in messages:
-    st.info(f"**{msg['nickname']}**: {msg['content']}")
+  # 최신글이 위로 오도록 역순 정렬
+  for index, row in df.iloc[::-1].iterrows():
+    nick = row.get("닉네임", "익명")
+    msg = row.get("한마디", "")
+    time_str = row.get("시간", "")
+
+    if pd.notna(msg) and str(msg).strip() != "":
+      with st.container():
+        st.markdown(
+            f"""
+                <div style="
+                    background-color: #1e293b; 
+                    padding: 15px; 
+                    border-radius: 10px; 
+                    margin-bottom: 10px; 
+                    border-left: 5px solid #3b82f6;
+                    color: white;
+                ">
+                    <strong style="color: #60a5fa;">{nick}</strong> 
+                    <span style="font-size: 0.8rem; color: #94a3b8; float: right;">{time_str}</span>
+                    <p style="margin-top: 8px; margin-bottom: 0; font-size: 1.05rem;">{msg}</p>
+                </div>
+                """,
+            unsafe_allow-html=True,
+        )
