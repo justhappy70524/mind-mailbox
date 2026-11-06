@@ -9,7 +9,6 @@ st.set_page_config(page_title="마음 우체통", page_icon="📮", layout="cent
 st.markdown(
     """
     <style>
-    /* 1. 기본 요소 등장 애니메이션 */
     @keyframes fadeInUp {
         from {
             opacity: 0;
@@ -20,8 +19,6 @@ st.markdown(
             transform: translateY(0);
         }
     }
-
-    /* 2. 관리자 보관함 부드러운 전용 등장 애니메이션 */
     @keyframes smoothSlideDown {
         from {
             opacity: 0;
@@ -32,18 +29,14 @@ st.markdown(
             transform: translateY(0);
         }
     }
-
     .title-container {
         animation: fadeInUp 0.8s ease-out;
         text-align: center;
         margin-bottom: 20px;
     }
-
     .admin-content {
         animation: smoothSlideDown 0.6s cubic-bezier(0.16, 1, 0.3, 1);
     }
-
-    /* 버튼 스타일 */
     div.stButton > button {
         transition: all 0.3s ease !important;
         border-radius: 8px !important;
@@ -52,8 +45,6 @@ st.markdown(
         transform: translateY(-2px) scale(1.02);
         box-shadow: 0 5px 15px rgba(59, 130, 246, 0.4) !important;
     }
-
-    /* 보관함 카드 스타일 */
     .mail-card {
         background-color: #1e293b;
         padding: 15px;
@@ -74,6 +65,10 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# 세션 상태(Session State)를 이용해 로그인 유지 관리
+if "is_admin" not in st.session_state:
+  st.session_state.is_admin = False
+
 # 구글 시트 링크 및 웹 앱 URL 불러오기
 try:
   SHEET_URL = st.secrets["connections"]["gsheets"]["spreadsheet"]
@@ -82,7 +77,7 @@ except Exception:
   SHEET_URL = ""
   WEBAPP_URL = ""
 
-# --- 상단 타이틀 (중앙 정렬) ---
+# --- 상단 타이틀 ---
 st.markdown(
     """
     <div class="title-container">
@@ -124,51 +119,66 @@ if submitted:
     except Exception as e:
       st.error(f"저장 중 오류 발생: {e}")
 
-# --- 하단 관리자 전용 페이지 ---
+# --- 하단 관리자 페이지 (인증 여부에 따라 분기) ---
 st.markdown("<br><br>", unsafe_allow_html=True)
 ADMIN_PASSWORD = "admin"  # 비밀번호 변경 필요 시 수정
 
-with st.expander("🔒 관리자 페이지 (비밀번호 필요)"):
-  input_pw = st.text_input("관리자 비밀번호를 입력하세요", type="password")
+if not st.session_state.is_admin:
+  # 1. 아직 로그인이 안 되었다면 비밀번호 입력창 표시
+  with st.expander("🔒 관리자 페이지 (비밀번호 필요)"):
+    with st.form("admin_login_form"):
+      input_pw = st.text_input(
+          "관리자 비밀번호를 입력하세요", type="password"
+      )
+      login_submitted = st.form_submit_button("로그인")
 
-  if input_pw == ADMIN_PASSWORD:
-    st.success("관리자 인증되었습니다.")
+      if login_submitted:
+        if input_pw == ADMIN_PASSWORD:
+          st.session_state.is_admin = True
+          st.rerun()  # 로그인 성공 시 즉시 새로고침하여 인증 상태 반영
+        else:
+          st.error("비밀번호가 올바르지 않습니다.")
+else:
+  # 2. 로그인이 완료되었다면 비밀번호 창은 숨기고, 보관함만 바로 출력
+  st.success("🔓 관리자 인증되었습니다.")
 
-    # 부드럽게 등장하도록 감싸주는 애니메이션 컨테이너 시작
-    st.markdown('<div class="admin-content">', unsafe_allow_html=True)
-
-    if st.button("🔄 목록 새로고침"):
+  # 상단에 로그아웃 및 수동 새로고침 버튼 배치
+  col_btn1, col_btn2 = st.columns([1, 1])
+  with col_btn1:
+    if st.button("🔄 실시간 최신화", use_container_width=True):
+      st.rerun()
+  with col_btn2:
+    if st.button("🔒 로그아웃", use_container_width=True):
+      st.session_state.is_admin = False
       st.rerun()
 
-    st.subheader("📬 등록된 마음 보관함")
+  st.markdown('<div class="admin-content">', unsafe_allow_html=True)
+  st.subheader("📬 등록된 마음 보관함")
 
-    try:
-      csv_url = SHEET_URL.replace("/edit", "/export?format=csv")
-      df = pd.read_csv(csv_url)
-    except Exception:
-      df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
+  try:
+    csv_url = SHEET_URL.replace("/edit", "/export?format=csv")
+    df = pd.read_csv(csv_url)
+  except Exception:
+    df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
 
-    if df.empty or "한마디" not in df.columns or df["한마디"].dropna().empty:
-      st.info("아직 등록된 마음이 없습니다.")
-    else:
-      for index, row in df.iloc[::-1].iterrows():
-        nick = row.get("닉네임", "익명")
-        msg = row.get("한마디", "")
-        time_str = row.get("시간", "")
+  if df.empty or "한마디" not in df.columns or df["한마디"].dropna().empty:
+    st.info("아직 등록된 마음이 없습니다.")
+  else:
+    for index, row in df.iloc[::-1].iterrows():
+      nick = row.get("닉네임", "익명")
+      msg = row.get("한마디", "")
+      time_str = row.get("시간", "")
 
-        if pd.notna(msg) and str(msg).strip() != "":
-          st.markdown(
-              f"""
-                        <div class="mail-card">
-                            <strong style="color: #60a5fa;">{nick}</strong>
-                            <span style="font-size: 0.8rem; color: #94a3b8; float: right;">{time_str}</span>
-                            <p style="margin-top: 8px; margin-bottom: 0; font-size: 1.05rem;">{msg}</p>
-                        </div>
-                        """,
-              unsafe_allow_html=True,
-          )
+      if pd.notna(msg) and str(msg).strip() != "":
+        st.markdown(
+            f"""
+                    <div class="mail-card">
+                        <strong style="color: #60a5fa;">{nick}</strong>
+                        <span style="font-size: 0.8rem; color: #94a3b8; float: right;">{time_str}</span>
+                        <p style="margin-top: 8px; margin-bottom: 0; font-size: 1.05rem;">{msg}</p>
+                    </div>
+                    """,
+            unsafe_allow_html=True,
+        )
 
-    st.markdown("</div>", unsafe_allow_html=True)  # 컨테이너 종료
-
-  elif input_pw != "":
-    st.error("비밀번호가 올바르지 않습니다.")
+  st.markdown("</div>", unsafe_allow_html=True)
