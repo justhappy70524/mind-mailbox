@@ -8,7 +8,7 @@ st.set_page_config(page_title="마음 우체통", page_icon="📮", layout="cent
 
 # --- 자동 새로고침 설정 (10초 = 10000밀리초마다 페이지 자동 갱신) ---
 # limit=None으로 설정하면 멈추지 않고 계속 자동 동기화됩니다.
-st_autorefresh(interval=10000, limit=None, key="heart_mailbox_refresh")
+st_autorefresh(interval=1000, limit=None, key="heart_mailbox_refresh")
 
 # --- CSS 스타일 및 애니메이션 ---
 st.markdown(
@@ -153,7 +153,7 @@ else:
     st.rerun()
 
   st.markdown('<div class="admin-content">', unsafe_allow_html=True)
-  st.subheader("📬 등록된 마음 보관함 (10초마다 자동 갱신 중 ⚡)")
+  st.subheader("📬 등록된 마음 보관함")
 
   try:
     csv_url = SHEET_URL.replace("/edit", "/export?format=csv")
