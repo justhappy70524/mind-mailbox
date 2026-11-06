@@ -147,3 +147,7 @@ with st.expander("🔒 관리자 페이지 (비밀번호 필요)"):
           )
   elif input_pw != "":
     st.error("비밀번호가 올바르지 않습니다.")
+
+# 화면에 새로고침 버튼 만들기
+if st.button("🔄 새로고침"):
+  st.rerun()
