@@ -2,8 +2,13 @@ from datetime import datetime
 import pandas as pd
 import requests
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="마음 우체통", page_icon="📮", layout="centered")
+
+# --- 자동 새로고침 설정 (10초 = 10000밀리초마다 페이지 자동 갱신) ---
+# limit=None으로 설정하면 멈추지 않고 계속 자동 동기화됩니다.
+st_autorefresh(interval=10000, limit=None, key="heart_mailbox_refresh")
 
 # --- CSS 스타일 및 애니메이션 ---
 st.markdown(
@@ -124,7 +129,7 @@ st.markdown("<br><br>", unsafe_allow_html=True)
 ADMIN_PASSWORD = "admin"  # 비밀번호 변경 필요 시 수정
 
 if not st.session_state.is_admin:
-  # 1. 아직 로그인이 안 되었다면 비밀번호 입력창 표시
+  # 1. 로그인 전: 비밀번호 입력창 표시
   with st.expander("🔒 관리자 페이지 (비밀번호 필요)"):
     with st.form("admin_login_form"):
       input_pw = st.text_input(
@@ -135,25 +140,20 @@ if not st.session_state.is_admin:
       if login_submitted:
         if input_pw == ADMIN_PASSWORD:
           st.session_state.is_admin = True
-          st.rerun()  # 로그인 성공 시 즉시 새로고침하여 인증 상태 반영
+          st.rer() if hasattr(st, "rer") else st.rerun()
         else:
           st.error("비밀번호가 올바르지 않습니다.")
 else:
-  # 2. 로그인이 완료되었다면 비밀번호 창은 숨기고, 보관함만 바로 출력
+  # 2. 로그인 완료 후: 비밀번호 창은 숨기고 보관함 실시간 출력
   st.success("🔓 관리자 인증되었습니다.")
 
-  # 상단에 로그아웃 및 수동 새로고침 버튼 배치
-  col_btn1, col_btn2 = st.columns([1, 1])
-  with col_btn1:
-    if st.button("🔄 실시간 최신화", use_container_width=True):
-      st.rerun()
-  with col_btn2:
-    if st.button("🔒 로그아웃", use_container_width=True):
-      st.session_state.is_admin = False
-      st.rerun()
+  # 로그아웃 버튼
+  if st.button("🔒 로그아웃", use_container_width=True):
+    st.session_state.is_admin = False
+    st.rerun()
 
   st.markdown('<div class="admin-content">', unsafe_allow_html=True)
-  st.subheader("📬 등록된 마음 보관함")
+  st.subheader("📬 등록된 마음 보관함 (10초마다 자동 갱신 중 ⚡)")
 
   try:
     csv_url = SHEET_URL.replace("/edit", "/export?format=csv")
