@@ -5,11 +5,10 @@ import streamlit as st
 
 st.set_page_config(page_title="마음 우체통", page_icon="📮", layout="centered")
 
-# --- CSS 스타일 및 애니메이션 다듬기 ---
+# --- CSS 스타일 및 애니메이션 ---
 st.markdown(
     """
     <style>
-    /* 타이틀 애니메이션 */
     @keyframes fadeInUp {
         from {
             opacity: 0;
@@ -22,9 +21,11 @@ st.markdown(
     }
     .title-container {
         animation: fadeInUp 0.8s ease-out;
+        text-align: center;
+        margin-bottom: 20px;
     }
 
-    /* 버튼 스타일 다듬기 */
+    /* 버튼 스타일 */
     div.stButton > button {
         transition: all 0.3s ease !important;
         border-radius: 8px !important;
@@ -34,7 +35,7 @@ st.markdown(
         box-shadow: 0 5px 15px rgba(59, 130, 246, 0.4) !important;
     }
 
-    /* 카드 스타일 */
+    /* 보관함 카드 스타일 */
     .mail-card {
         background-color: #1e293b;
         padding: 15px;
@@ -60,43 +61,21 @@ try:
     SHEET_URL = st.secrets["connections"]["gsheets"]["spreadsheet"]
     WEBAPP_URL = st.secrets["connections"]["gsheets"]["webapp_url"]
 except Exception:
-    st.error(
-        "Settings > Secrets에 spreadsheet와 webapp_url이 올바르게 설정되었는지 확인해 주세요!"
-    )
     SHEET_URL = ""
     WEBAPP_URL = ""
 
-# --- 상단 타이틀과 새로고침 버튼 정렬 ---
-col1, col2 = st.columns([4, 1])
-with col1:
-    st.markdown(
-        """
-        <div class="title-container">
-            <h1 style='margin-bottom: 0px;'>📮 마음 우체통</h1>
-            <p style='color: #94a3b8; margin-top: 5px;'>오늘 하루 마음속에 담아둔 이야기가 있나요? 따뜻한 한마디를 남겨주세요.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-with col2:
-    st.write("")  # 수직 정렬 맞춤용 공백
-    if st.button("🔄 새로고침", use_container_width=True):
-        st.rerun()
+# --- 상단 타이틀 (깔끔한 중앙 정렬) ---
+st.markdown(
+    """
+    <div class="title-container">
+        <h1>📮 오늘의 한마디 마음 우체통</h1>
+        <p style="color: #94a3b8; font-size: 1.1rem;">오늘 하루 마음속에 담아둔 이야기가 있나요? 따뜻한 한마디를 남겨주세요.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-st.markdown("---")
-
-# --- 상단 관리자 인증 영역 ---
-ADMIN_PASSWORD = "admin"  # 비밀번호 변경 필요 시 수정
-
-with st.expander("🔒 관리자 인증"):
-    input_pw = st.text_input("관리자 비밀번호", type="password")
-    is_admin = input_pw == ADMIN_PASSWORD
-    if is_admin:
-        st.success("관리자로 인증되었습니다.")
-    elif input_pw != "":
-        st.error("비밀번호가 올바르지 않습니다.")
-
-# --- 마음 남기기 입력 폼 ---
+# --- 마음 남기기 입력 폼 (학생들이 보게 되는 메인 화면) ---
 with st.form("mail_form", clear_on_submit=True):
     nickname = st.text_input("닉네임 (비워두면 익명)", placeholder="따뜻한 사람")
     message = st.text_area(
@@ -127,33 +106,46 @@ if submitted:
         except Exception as e:
             st.error(f"저장 중 오류 발생: {e}")
 
-# --- 관리자 전용 등록 보관함 (관리자 인증 성공 시에만 출력) ---
-if is_admin:
-    st.markdown("---")
-    st.subheader("📬 등록된 마음 보관함 (관리자 전용)")
+# --- 하단 관리자 전용 페이지 ---
+st.markdown("<br><br>", unsafe_allow_html=True)
+ADMIN_PASSWORD = "admin"  # 비밀번호 변경 필요 시 수정하세요
 
-    try:
-        csv_url = SHEET_URL.replace("/edit", "/export?format=csv")
-        df = pd.read_csv(csv_url)
-    except Exception:
-        df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
+with st.expander("🔒 관리자 페이지 (비밀번호 필요)"):
+    input_pw = st.text_input("관리자 비밀번호를 입력하세요", type="password")
 
-    if df.empty or "한마디" not in df.columns or df["한마디"].dropna().empty:
-        st.info("아직 등록된 마음이 없습니다.")
-    else:
-        for index, row in df.iloc[::-1].iterrows():
-            nick = row.get("닉네임", "익명")
-            msg = row.get("한마디", "")
-            time_str = row.get("시간", "")
+    if input_pw == ADMIN_PASSWORD:
+        st.success("관리자 인증되었습니다.")
 
-            if pd.notna(msg) and str(msg).strip() != "":
-                st.markdown(
-                    f"""
-                    <div class="mail-card">
-                        <strong style="color: #60a5fa;">{nick}</strong>
-                        <span style="font-size: 0.8rem; color: #94a3b8; float: right;">{time_str}</span>
-                        <p style="margin-top: 8px; margin-bottom: 0; font-size: 1.05rem;">{msg}</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+        # 관리자 전용 새로고침 버튼
+        if st.button("🔄 목록 새로고침"):
+            st.rerun()
+
+        st.subheader("📬 등록된 마음 보관함")
+
+        try:
+            csv_url = SHEET_URL.replace("/edit", "/export?format=csv")
+            df = pd.read_csv(csv_url)
+        except Exception:
+            df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
+
+        if df.empty or "한마디" not in df.columns or df["한마디"].dropna().empty:
+            st.info("아직 등록된 마음이 없습니다.")
+        else:
+            for index, row in df.iloc[::-1].iterrows():
+                nick = row.get("닉네임", "익명")
+                msg = row.get("한마디", "")
+                time_str = row.get("시간", "")
+
+                if pd.notna(msg) and str(msg).strip() != "":
+                    st.markdown(
+                        f"""
+                        <div class="mail-card">
+                            <strong style="color: #60a5fa;">{nick}</strong>
+                            <span style="font-size: 0.8rem; color: #94a3b8; float: right;">{time_str}</span>
+                            <p style="margin-top: 8px; margin-bottom: 0; font-size: 1.05rem;">{msg}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+    elif input_pw != "":
+        st.error("비밀번호가 올바르지 않습니다.")
