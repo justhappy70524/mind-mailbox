@@ -117,7 +117,7 @@ with st.expander("🔒 관리자 페이지 (비밀번호 필요)"):
         st.success("관리자 인증되었습니다.")
 
         # 관리자 전용 새로고침 버튼
-        if st.button("🔄 목록 새로고침"):
+        if st.button("새로고침"):
             st.rerun()
 
         st.subheader("📬 등록된 마음 보관함")
