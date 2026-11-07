@@ -146,7 +146,7 @@ if not st.session_state.is_admin:
                 else:
                     st.error("비밀번호가 올바르지 않습니다.")
 else:
-    # 2. 로그인 완료 후: 페이지네이션 기반 보관함 출력
+    # 2. 로그인 완료 후: 확장된 페이지네이션 보관함 출력
     st.success("🔓 관리자 인증되었습니다.")
 
     # 로그아웃 버튼
@@ -181,6 +181,8 @@ else:
         # 페이지 번호 범위 제한
         if st.session_state.current_page > total_pages:
             st.session_state.current_page = total_pages
+        if st.session_state.current_page < 1:
+            st.session_state.current_page = 1
 
         start_idx = (st.session_state.current_page - 1) * ITEMS_PER_PAGE
         end_idx = start_idx + ITEMS_PER_PAGE
@@ -204,21 +206,43 @@ else:
                 unsafe_allow_html=True,
             )
 
-        # --- 페이지네이션 컨트롤 버튼 ---
+        # --- 업그레이드된 페이지네이션 컨트롤 (맨앞, 이전, 페이지입력, 다음, 맨뒤) ---
         if total_pages > 1:
-            col_prev, col_page, col_next = st.columns([1, 2, 1])
+            st.markdown("---")
+            col1, col2, col3, col4, col5 = st.columns([1, 1, 1.5, 1, 1])
 
-            with col_prev:
+            with col1:
+                if st.button("⏮ 맨앞", disabled=(st.session_state.current_page == 1), use_container_width=True):
+                    st.session_state.current_page = 1
+                    st.rerun()
+
+            with col2:
                 if st.button("◀ 이전", disabled=(st.session_state.current_page == 1), use_container_width=True):
                     st.session_state.current_page -= 1
                     st.rerun()
 
-            with col_page:
-                st.markdown(f"<p style='text-align: center; margin-top: 5px; font-weight: bold;'>{st.session_state.current_page} / {total_pages}</p>", unsafe_allow_html=True)
+            with col3:
+                # 직접 페이지 번호를 입력해서 이동할 수 있는 숫자 입력창
+                input_page = st.number_input(
+                    "페이지 이동",
+                    min_value=1,
+                    max_value=total_pages,
+                    value=st.session_state.current_page,
+                    step=1,
+                    label_visibility="collapsed"
+                )
+                if input_page != st.session_state.current_page:
+                    st.session_state.current_page = input_page
+                    st.rerun()
 
-            with col_next:
+            with col4:
                 if st.button("다음 ▶", disabled=(st.session_state.current_page == total_pages), use_container_width=True):
                     st.session_state.current_page += 1
+                    st.rerun()
+
+            with col5:
+                if st.button("맨뒤 ⏭", disabled=(st.session_state.current_page == total_pages), use_container_width=True):
+                    st.session_state.current_page = total_pages
                     st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
