@@ -71,11 +71,9 @@ if "is_admin" not in st.session_state:
 if "current_page" not in st.session_state:
     st.session_state.current_page = 1
 
-# 입력 폼 유지를 위한 세션 상태 초기화
-if "nick_key" not in st.session_state:
-    st.session_state.nick_key = ""
-if "msg_key" not in st.session_state:
-    st.session_state.msg_key = ""
+# 전송 성공 여부를 판단하기 위한 플래그
+if "form_clear" not in st.session_state:
+    st.session_state.form_clear = False
 
 # 구글 시트 링크 및 웹 앱 URL 불러오기
 try:
@@ -96,11 +94,20 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 마음 남기기 입력 폼 (clear_on_submit 제거 및 세션 키 연동) ---
+# 전송 성공 시 입력값을 초기화하기 위해 폼 내부에 기본값 설정용 변수 활용
+if st.session_state.form_clear:
+    default_nick = ""
+    default_msg = ""
+    st.session_state.form_clear = False  # 초기화 후 플래그 해제
+else:
+    default_nick = ""
+    default_msg = ""
+
+# --- 마음 남기기 입력 폼 ---
 with st.form("mail_form"):
-    nickname = st.text_input("닉네임 (비워두면 익명)", placeholder="따뜻한 사람", key="nick_key")
+    nickname = st.text_input("닉네임 (비워두면 익명)", value=default_nick, placeholder="따뜻한 사람")
     message = st.text_area(
-        "오늘의 한마디", placeholder="오늘 하루도 정말 고생 많았어요!", key="msg_key"
+        "오늘의 한마디", value=default_msg, placeholder="오늘 하루도 정말 고생 많았어요!"
     )
     submitted = st.form_submit_button("마음 보내기 💌", use_container_width=True)
 
@@ -124,9 +131,8 @@ if submitted:
             if response.status_code == 200:
                 st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
                 st.balloons()
-                # 전송이 성공했을 때만 입력창을 초기화하고 재실행
-                st.session_state.nick_key = ""
-                st.session_state.msg_key = ""
+                # 성공 시 플래그를 True로 켜고 재실행하여 입력창을 비움
+                st.session_state.form_clear = True
                 st.rerun()
             else:
                 st.error("전송에 실패했습니다. 다시 시도해 주세요.")
@@ -201,7 +207,7 @@ else:
 
             for index, row in page_items.iterrows():
                 nick = row.get("닉네임", "익명")
-                msg = row.get("h_message", row.get("한마디", "")) # Fallback safely
+                msg = row.get("한마디", "")
                 time_str = row.get("시간", "")
 
                 st.markdown(
