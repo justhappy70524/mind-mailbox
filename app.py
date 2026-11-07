@@ -2,12 +2,8 @@ from datetime import datetime
 import pandas as pd
 import requests
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="마음 우체통", page_icon="📮", layout="centered")
-
-# --- 자동 새로고침 설정 (1초마다 자동 갱신) ---
-st_autorefresh(interval=1000, limit=None, key="heart_mailbox_refresh")
 
 # --- CSS 스타일 및 애니메이션 ---
 st.markdown(
@@ -146,7 +142,7 @@ if not st.session_state.is_admin:
                 else:
                     st.error("비밀번호가 올바르지 않습니다.")
 else:
-    # 2. 로그인 완료 후: 확장된 페이지네이션 보관함 출력
+    # 2. 로그인 완료 후
     st.success("🔓 관리자 인증되었습니다.")
 
     # 로그아웃 버튼
@@ -155,94 +151,100 @@ else:
         st.session_state.current_page = 1
         st.rerun()
 
-    st.markdown('<div class="admin-content">', unsafe_allow_html=True)
-    st.subheader("📬 등록된 마음 보관함")
+    # --- 핵심: 오직 마음 보관함 영역만 1초마다 백그라운드 자동 동기화 (전체 화면 깜빡임 없음!) ---
+    @st.fragment(run_every=1)
+    def render_live_mailbox():
+        st.markdown('<div class="admin-content">', unsafe_allow_html=True)
+        st.subheader("📬 등록된 마음 보관함 (실시간 동기화 중 ⚡)")
 
-    try:
-        csv_url = SHEET_URL.replace("/edit", "/export?format=csv")
-        df = pd.read_csv(csv_url)
-    except Exception:
-        df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
+        try:
+            csv_url = SHEET_URL.replace("/edit", "/export?format=csv")
+            df = pd.read_csv(csv_url)
+        except Exception:
+            df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
 
-    # 비어있지 않은 데이터만 추출 및 역순 정렬
-    if not df.empty and "한마디" in df.columns:
-        valid_df = df[df["한마디"].notna() & (df["한마디"].astype(str).str.strip() != "")].iloc[::-1]
-    else:
-        valid_df = pd.DataFrame()
+        # 비어있지 않은 데이터만 추출 및 역순 정렬
+        if not df.empty and "한마디" in df.columns:
+            valid_df = df[df["한마디"].notna() & (df["한마디"].astype(str).str.strip() != "")].iloc[::-1]
+        else:
+            valid_df = pd.DataFrame()
 
-    total_items = len(valid_df)
+        total_items = len(valid_df)
 
-    if total_items == 0:
-        st.info("아직 등록된 마음이 없습니다.")
-    else:
-        ITEMS_PER_PAGE = 20
-        total_pages = (total_items - 1) // ITEMS_PER_PAGE + 1
+        if total_items == 0:
+            st.info("아직 등록된 마음이 없습니다.")
+        else:
+            ITEMS_PER_PAGE = 20
+            total_pages = (total_items - 1) // ITEMS_PER_PAGE + 1
 
-        # 페이지 번호 범위 제한
-        if st.session_state.current_page > total_pages:
-            st.session_state.current_page = total_pages
-        if st.session_state.current_page < 1:
-            st.session_state.current_page = 1
+            # 페이지 번호 범위 제한
+            if st.session_state.current_page > total_pages:
+                st.session_state.current_page = total_pages
+            if st.session_state.current_page < 1:
+                st.session_state.current_page = 1
 
-        start_idx = (st.session_state.current_page - 1) * ITEMS_PER_PAGE
-        end_idx = start_idx + ITEMS_PER_PAGE
-        page_items = valid_df.iloc[start_idx:end_idx]
+            start_idx = (st.session_state.current_page - 1) * ITEMS_PER_PAGE
+            end_idx = start_idx + ITEMS_PER_PAGE
+            page_items = valid_df.iloc[start_idx:end_idx]
 
-        st.caption(f"총 {total_items}개의 마음 중 {start_idx + 1}~{min(end_idx, total_items)}개 표시 중 (페이지 {st.session_state.current_page} / {total_pages})")
+            st.caption(f"총 {total_items}개의 마음 중 {start_idx + 1}~{min(end_idx, total_items)}개 표시 중 (페이지 {st.session_state.current_page} / {total_pages})")
 
-        for index, row in page_items.iterrows():
-            nick = row.get("닉네임", "익명")
-            msg = row.get("한마디", "")
-            time_str = row.get("시간", "")
+            for index, row in page_items.iterrows():
+                nick = row.get("닉네임", "익명")
+                msg = row.get("한마디", "")
+                time_str = row.get("시간", "")
 
-            st.markdown(
-                f"""
-                <div class="mail-card">
-                    <strong style="color: #60a5fa;">{nick}</strong>
-                    <span style="font-size: 0.8rem; color: #94a3b8; float: right;">{time_str}</span>
-                    <p style="margin-top: 8px; margin-bottom: 0; font-size: 1.05rem;">{msg}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        # --- 업그레이드된 페이지네이션 컨트롤 (맨앞, 이전, 페이지입력, 다음, 맨뒤) ---
-        if total_pages > 1:
-            st.markdown("---")
-            col1, col2, col3, col4, col5 = st.columns([1, 1, 1.5, 1, 1])
-
-            with col1:
-                if st.button("⏮ 맨앞", disabled=(st.session_state.current_page == 1), use_container_width=True):
-                    st.session_state.current_page = 1
-                    st.rerun()
-
-            with col2:
-                if st.button("◀ 이전", disabled=(st.session_state.current_page == 1), use_container_width=True):
-                    st.session_state.current_page -= 1
-                    st.rerun()
-
-            with col3:
-                # 직접 페이지 번호를 입력해서 이동할 수 있는 숫자 입력창
-                input_page = st.number_input(
-                    "페이지 이동",
-                    min_value=1,
-                    max_value=total_pages,
-                    value=st.session_state.current_page,
-                    step=1,
-                    label_visibility="collapsed"
+                st.markdown(
+                    f"""
+                    <div class="mail-card">
+                        <strong style="color: #60a5fa;">{nick}</strong>
+                        <span style="font-size: 0.8rem; color: #94a3b8; float: right;">{time_str}</span>
+                        <p style="margin-top: 8px; margin-bottom: 0; font-size: 1.05rem;">{msg}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
-                if input_page != st.session_state.current_page:
-                    st.session_state.current_page = input_page
-                    st.rerun()
 
-            with col4:
-                if st.button("다음 ▶", disabled=(st.session_state.current_page == total_pages), use_container_width=True):
-                    st.session_state.current_page += 1
-                    st.rerun()
+            # --- 페이지네이션 컨트롤 (고유 key 부여) ---
+            if total_pages > 1:
+                st.markdown("---")
+                col1, col2, col3, col4, col5 = st.columns([1, 1, 1.5, 1, 1])
 
-            with col5:
-                if st.button("맨뒤 ⏭", disabled=(st.session_state.current_page == total_pages), use_container_width=True):
-                    st.session_state.current_page = total_pages
-                    st.rerun()
+                with col1:
+                    if st.button("⏮ 맨앞", disabled=(st.session_state.current_page == 1), use_container_width=True, key="frag_first"):
+                        st.session_state.current_page = 1
+                        st.rerun()
 
-    st.markdown("</div>", unsafe_allow_html=True)
+                with col2:
+                    if st.button("◀ 이전", disabled=(st.session_state.current_page == 1), use_container_width=True, key="frag_prev"):
+                        st.session_state.current_page -= 1
+                        st.rerun()
+
+                with col3:
+                    input_page = st.number_input(
+                        "페이지 이동",
+                        min_value=1,
+                        max_value=total_pages,
+                        value=st.session_state.current_page,
+                        step=1,
+                        label_visibility="collapsed",
+                        key="frag_page_input"
+                    )
+                    if input_page != st.session_state.current_page:
+                        st.session_state.current_page = input_page
+                        st.rerun()
+
+                with col4:
+                    if st.button("다음 ▶", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="frag_next"):
+                        st.session_state.current_page += 1
+                        st.rerun()
+
+                with col5:
+                    if st.button("맨뒤 ⏭", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="frag_last"):
+                        st.session_state.current_page = total_pages
+                        st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # 조각 함수 실행
+    render_live_mailbox()
