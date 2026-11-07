@@ -151,8 +151,8 @@ else:
         st.session_state.current_page = 1
         st.rerun()
 
-    # --- 핵심: 오직 마음 보관함 영역만 1초마다 백그라운드 자동 동기화 (전체 화면 깜빡임 없음!) ---
-    @st.fragment(run_every=1)
+    # --- 실시간 동기화 조각 함수 ---
+    @st.fragment(run_every=2)
     def render_live_mailbox():
         st.markdown('<div class="admin-content">', unsafe_allow_html=True)
         st.subheader("📬 등록된 마음 보관함 (실시간 동기화 중 ⚡)")
@@ -163,7 +163,6 @@ else:
         except Exception:
             df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
 
-        # 비어있지 않은 데이터만 추출 및 역순 정렬
         if not df.empty and "한마디" in df.columns:
             valid_df = df[df["한마디"].notna() & (df["한마디"].astype(str).str.strip() != "")].iloc[::-1]
         else:
@@ -177,7 +176,6 @@ else:
             ITEMS_PER_PAGE = 20
             total_pages = (total_items - 1) // ITEMS_PER_PAGE + 1
 
-            # 페이지 번호 범위 제한
             if st.session_state.current_page > total_pages:
                 st.session_state.current_page = total_pages
             if st.session_state.current_page < 1:
@@ -205,46 +203,30 @@ else:
                     unsafe_allow_html=True,
                 )
 
-            # --- 페이지네이션 컨트롤 (고유 key 부여) ---
+            # --- 페이지네이션 컨트롤 ---
             if total_pages > 1:
                 st.markdown("---")
                 col1, col2, col3, col4, col5 = st.columns([1, 1, 1.5, 1, 1])
 
                 with col1:
-                    if st.button("⏮ 맨앞", disabled=(st.session_state.current_page == 1), use_container_width=True, key="frag_first"):
+                    if st.button("⏮ 맨앞", disabled=(st.session_state.current_page == 1), use_container_width=True, key="btn_first"):
                         st.session_state.current_page = 1
-                        st.rerun()
 
                 with col2:
-                    if st.button("◀ 이전", disabled=(st.session_state.current_page == 1), use_container_width=True, key="frag_prev"):
+                    if st.button("◀ 이전", disabled=(st.session_state.current_page == 1), use_container_width=True, key="btn_prev"):
                         st.session_state.current_page -= 1
-                        st.rerun()
 
                 with col3:
-                    input_page = st.number_input(
-                        "페이지 이동",
-                        min_value=1,
-                        max_value=total_pages,
-                        value=st.session_state.current_page,
-                        step=1,
-                        label_visibility="collapsed",
-                        key="frag_page_input"
-                    )
-                    if input_page != st.session_state.current_page:
-                        st.session_state.current_page = input_page
-                        st.rerun()
+                    st.markdown(f"<h4 style='text-align: center; margin: 0; padding-top: 5px;'>{st.session_state.current_page} / {total_pages}</h4>", unsafe_allow_html=True)
 
                 with col4:
-                    if st.button("다음 ▶", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="frag_next"):
+                    if st.button("다음 ▶", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="btn_next"):
                         st.session_state.current_page += 1
-                        st.rerun()
 
                 with col5:
-                    if st.button("맨뒤 ⏭", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="frag_last"):
+                    if st.button("맨뒤 ⏭", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="btn_last"):
                         st.session_state.current_page = total_pages
-                        st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # 조각 함수 실행
     render_live_mailbox()
