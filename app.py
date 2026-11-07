@@ -71,6 +71,12 @@ if "is_admin" not in st.session_state:
 if "current_page" not in st.session_state:
     st.session_state.current_page = 1
 
+# 입력 폼 유지를 위한 세션 상태 초기화
+if "nick_key" not in st.session_state:
+    st.session_state.nick_key = ""
+if "msg_key" not in st.session_state:
+    st.session_state.msg_key = ""
+
 # 구글 시트 링크 및 웹 앱 URL 불러오기
 try:
     SHEET_URL = st.secrets["connections"]["gsheets"]["spreadsheet"]
@@ -90,11 +96,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 마음 남기기 입력 폼 ---
-with st.form("mail_form", clear_on_submit=True):
-    nickname = st.text_input("닉네임 (비워두면 익명)", placeholder="따뜻한 사람")
+# --- 마음 남기기 입력 폼 (clear_on_submit 제거 및 세션 키 연동) ---
+with st.form("mail_form"):
+    nickname = st.text_input("닉네임 (비워두면 익명)", placeholder="따뜻한 사람", key="nick_key")
     message = st.text_area(
-        "오늘의 한마디", placeholder="오늘 하루도 정말 고생 많았어요!"
+        "오늘의 한마디", placeholder="오늘 하루도 정말 고생 많았어요!", key="msg_key"
     )
     submitted = st.form_submit_button("마음 보내기 💌", use_container_width=True)
 
@@ -105,17 +111,23 @@ if submitted:
         st.error("웹 앱 URL(webapp_url) 설정이 누락되었습니다.")
     else:
         if nickname.strip() == "":
-            nickname = "익명"
+            nick_to_send = "익명"
+        else:
+            nick_to_send = nickname
 
         now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         try:
-            payload = {"nickname": nickname, "message": message, "time": now_time}
+            payload = {"nickname": nick_to_send, "message": message, "time": now_time}
             response = requests.post(WEBAPP_URL, json=payload)
 
             if response.status_code == 200:
                 st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
                 st.balloons()
+                # 전송이 성공했을 때만 입력창을 초기화하고 재실행
+                st.session_state.nick_key = ""
+                st.session_state.msg_key = ""
+                st.rerun()
             else:
                 st.error("전송에 실패했습니다. 다시 시도해 주세요.")
         except Exception as e:
@@ -189,7 +201,7 @@ else:
 
             for index, row in page_items.iterrows():
                 nick = row.get("닉네임", "익명")
-                msg = row.get("한마디", "")
+                msg = row.get("h_message", row.get("한마디", "")) # Fallback safely
                 time_str = row.get("시간", "")
 
                 st.markdown(
