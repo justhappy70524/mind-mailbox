@@ -79,8 +79,16 @@ if "send_success" not in st.session_state:
     st.session_state.send_success = False
 if "last_sent_time" not in st.session_state:
     st.session_state.last_sent_time = 0.0
+if "clear_inputs" not in st.session_state:
+    st.session_state.clear_inputs = False
 
-# --- 설정 상수 (필요에 따라 숫자 변경 가능) ---
+# [핵심 해결] 위젯이 생성되기 전에 성공 여부에 따라 입력값을 미리 비워줍니다.
+if st.session_state.clear_inputs:
+    st.session_state.nick_input = ""
+    st.session_state.msg_input = ""
+    st.session_state.clear_inputs = False
+
+# --- 설정 상수 ---
 MAX_NICKNAME_LEN = 15   # 닉네임 최대 글자 수
 MAX_MESSAGE_LEN = 200   # 한마디 최대 글자 수
 COOLDOWN_SECONDS = 10   # 연속 전송 제한 시간 (초)
@@ -120,7 +128,7 @@ with st.form("mail_form"):
     )
     submitted = st.form_submit_button("마음 보내기 💌", use_container_width=True)
 
-# 전송 직후 rerun 되었을 때 성공 알림 출력
+# 전송 성공 시 화면에 알림과 풍선 띄우기
 if st.session_state.send_success:
     st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
     st.balloons()
@@ -148,11 +156,9 @@ if submitted:
             response = requests.post(WEBAPP_URL, json=payload)
 
             if response.status_code == 200:
-                # 전송 성공 시 입력창 초기화 및 상태 업데이트
-                st.session_state.nick_input = ""
-                st.session_state.msg_input = ""
                 st.session_state.last_sent_time = time.time()
                 st.session_state.send_success = True
+                st.session_state.clear_inputs = True  # 다음 렌더링 때 입력창이 안전하게 비워지도록 예약
                 st.rerun()
             else:
                 st.error("전송에 실패했습니다. 다시 시도해 주세요.")
