@@ -89,42 +89,32 @@ if st.session_state.clear_inputs:
     st.session_state.clear_inputs = False
 
 
-# --- 금칙어 불러오기 및 강력한 우회 검열 함수 ---
+# --- 외부 파일 기반 금칙어 로드 및 검열 함수 ---
 def load_bad_words():
-    """bad_words.txt 파일에서 금칙어를 읽어옵니다. 파일이 없으면 기본 금칙어 반환"""
-    default_words = [
-        "시발",
-        "ㅅㅂ",
-        "ㅆㅂ",
-        "개새",
-        "병신",
-        "지랄",
-        "새끼",
-        "죽어",
-        "꺼져",
-        "야발",
-    ]
+    """bad_words.txt 파일에서만 금칙어를 읽어옵니다 (코드 내 하드코딩 없음)."""
     try:
         with open("bad_words.txt", "r", encoding="utf-8") as f:
             words = [line.strip() for line in f if line.strip()]
-            return words if words else default_words
+            return words
     except Exception:
-        return default_words
+        return []
 
 
 def normalize_text(text):
     """띄어쓰기, 특수문자, 이모티콘, 기호 우회를 완벽히 차단하기 위한 정규화"""
     text = text.lower()
-    # 비슷한 모양의 숫자/기호 치환
     text = text.replace("1", "ㅣ").replace("!", "ㅣ").replace("0", "ㅇ")
-    # 한글(완성형, 자모), 영문, 숫자 외의 모든 공백, 특수문자, 이모티콘, 기호 통째로 제거
+    # 한글, 영문, 숫자 외의 공백, 특수문자, 이모티콘 제거
     text = re.sub(r'[^가-힣ㄱ-ㅎㅏ-ㅣa-z0-9]', '', text)
     return text
 
 
 def contains_profanity(text):
-    """금칙어 포함 여부 확인"""
+    """외부 파일의 금칙어 목록과 대조하여 포함 여부 확인"""
     bad_words = load_bad_words()
+    if not bad_words:
+        return False
+        
     normalized = normalize_text(text)
 
     for word in bad_words:
