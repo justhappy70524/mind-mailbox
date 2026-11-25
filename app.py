@@ -89,9 +89,9 @@ if st.session_state.clear_inputs:
     st.session_state.clear_inputs = False
 
 
-# --- 외부 파일 기반 금칙어 로드 및 검열 함수 ---
+# --- 외부 파일 기반 금칙어 로드 및 초성 자동 변환/검열 함수 ---
 def load_bad_words():
-    """bad_words.txt 파일에서만 금칙어를 읽어옵니다 (코드 내 하드코딩 없음)."""
+    """bad_words.txt 파일에서 금칙어를 읽어옵니다."""
     try:
         with open("bad_words.txt", "r", encoding="utf-8") as f:
             words = [line.strip() for line in f if line.strip()]
@@ -100,26 +100,52 @@ def load_bad_words():
         return []
 
 
+def get_chosung(text):
+    """한글 완성형 문자열에서 초성만 추출하는 함수 (예: '시발' -> 'ㅅㅂ')"""
+    CHOSUNG_LIST = [
+        'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 
+        'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'
+    ]
+    result = []
+    for char in text:
+        code = ord(char)
+        # 한글 완성형 영역인 경우
+        if 0xAC00 <= code <= 0xD7A3:
+            chosung_idx = (code - 0xAC00) // 588
+            result.append(CHOSUNG_LIST[chosung_idx])
+        elif 'ㄱ' <= char <= 'ㅎ':
+            result.append(char)
+        else:
+            result.append(char)
+    return "".join(result)
+
+
 def normalize_text(text):
-    """띄어쓰기, 특수문자, 숫자, 이모티콘, 기호 우회를 완벽히 차단하기 위한 정규화"""
+    """특수문자, 숫자, 이모티콘, 공백을 모두 제거하고 소문자화"""
     text = text.lower()
-    # 숫자(0-9) 및 특수문자, 공백을 모두 제거 (한글, 영문만 허용)
+    text = text.replace("1", "ㅣ").replace("!", "ㅣ").replace("0", "ㅇ")
     text = re.sub(r'[^가-힣ㄱ-ㅎㅏ-ㅣa-z]', '', text)
     return text
 
 
 def contains_profanity(text):
-    """외부 파일의 금칙어 목록과 대조하여 포함 여부 확인"""
+    """완성형 단어 및 자동으로 추출된 초성 형태까지 모두 대조하여 검열"""
     bad_words = load_bad_words()
     if not bad_words:
         return False
         
     normalized = normalize_text(text)
+    user_chosung = get_chosung(normalized)
 
     for word in bad_words:
         norm_word = normalize_text(word)
-        if norm_word and norm_word in normalized:
+        word_chosung = get_chosung(norm_word)
+
+        if norm_word and (norm_word in normalized or norm_word in user_chosung):
             return True
+        if word_chosung and (word_chosung in normalized or word_chosung in user_chosung):
+            return True
+            
     return False
 
 
