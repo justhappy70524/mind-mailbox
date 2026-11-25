@@ -1,4 +1,5 @@
 from datetime import datetime
+import time
 import pandas as pd
 import requests
 import streamlit as st
@@ -65,15 +66,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 세션 상태(Session State) 관리
+# --- 세션 상태(Session State) 초기화 ---
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
 if "current_page" not in st.session_state:
     st.session_state.current_page = 1
+if "nick_input" not in st.session_state:
+    st.session_state.nick_input = ""
+if "msg_input" not in st.session_state:
+    st.session_state.msg_input = ""
+if "send_success" not in st.session_state:
+    st.session_state.send_success = False
+if "last_sent_time" not in st.session_state:
+    st.session_state.last_sent_time = 0.0
 
-# 전송 성공 여부를 판단하기 위한 플래그
-if "form_clear" not in st.session_state:
-    st.session_state.form_clear = False
+# --- 설정 상수 (필요에 따라 숫자 변경 가능) ---
+MAX_NICKNAME_LEN = 15   # 닉네임 최대 글자 수
+MAX_MESSAGE_LEN = 200   # 한마디 최대 글자 수
+COOLDOWN_SECONDS = 10   # 연속 전송 제한 시간 (초)
 
 # 구글 시트 링크 및 웹 앱 URL 불러오기
 try:
@@ -94,45 +104,55 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 전송 성공 시 입력값을 초기화하기 위해 폼 내부에 기본값 설정용 변수 활용
-if st.session_state.form_clear:
-    default_nick = ""
-    default_msg = ""
-    st.session_state.form_clear = False  # 초기화 후 플래그 해제
-else:
-    default_nick = ""
-    default_msg = ""
-
 # --- 마음 남기기 입력 폼 ---
 with st.form("mail_form"):
-    nickname = st.text_input("닉네임 (비워두면 익명)", value=default_nick, placeholder="따뜻한 사람")
+    nickname = st.text_input(
+        f"닉네임 (비워두면 익명, 최대 {MAX_NICKNAME_LEN}자)",
+        placeholder="따뜻한 사람",
+        max_chars=MAX_NICKNAME_LEN,
+        key="nick_input",
+    )
     message = st.text_area(
-        "오늘의 한마디", value=default_msg, placeholder="오늘 하루도 정말 고생 많았어요!"
+        f"오늘의 한마디 (최대 {MAX_MESSAGE_LEN}자)",
+        placeholder="오늘 하루도 정말 고생 많았어요!",
+        max_chars=MAX_MESSAGE_LEN,
+        key="msg_input",
     )
     submitted = st.form_submit_button("마음 보내기 💌", use_container_width=True)
 
+# 전송 직후 rerun 되었을 때 성공 알림 출력
+if st.session_state.send_success:
+    st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
+    st.balloons()
+    st.session_state.send_success = False
+
 if submitted:
-    if message.strip() == "":
+    current_time = time.time()
+    elapsed = current_time - st.session_state.last_sent_time
+
+    if elapsed < COOLDOWN_SECONDS:
+        remain = int(COOLDOWN_SECONDS - elapsed) + 1
+        st.warning(f"도배 방지를 위해 {remain}초 후에 다시 보낼 수 있습니다. 잠시만 기다려 주세요!")
+    elif message.strip() == "":
         st.warning("한마디 내용을 입력해 주세요!")
+    elif len(message) > MAX_MESSAGE_LEN or len(nickname) > MAX_NICKNAME_LEN:
+        st.warning("허용된 최대 글자 수를 초과했습니다.")
     elif not WEBAPP_URL:
         st.error("웹 앱 URL(webapp_url) 설정이 누락되었습니다.")
     else:
-        if nickname.strip() == "":
-            nick_to_send = "익명"
-        else:
-            nick_to_send = nickname
-
-        now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        nick_to_send = nickname.strip() if nickname.strip() != "" else "익명"
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         try:
-            payload = {"nickname": nick_to_send, "message": message, "time": now_time}
+            payload = {"nickname": nick_to_send, "message": message.strip(), "time": now_str}
             response = requests.post(WEBAPP_URL, json=payload)
 
             if response.status_code == 200:
-                st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
-                st.balloons()
-                # 성공 시 플래그를 True로 켜고 재실행하여 입력창을 비움
-                st.session_state.form_clear = True
+                # 전송 성공 시 입력창 초기화 및 상태 업데이트
+                st.session_state.nick_input = ""
+                st.session_state.msg_input = ""
+                st.session_state.last_sent_time = time.time()
+                st.session_state.send_success = True
                 st.rerun()
             else:
                 st.error("전송에 실패했습니다. 다시 시도해 주세요.")
