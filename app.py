@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 import time
 import pandas as pd
 import requests
@@ -82,16 +83,61 @@ if "last_sent_time" not in st.session_state:
 if "clear_inputs" not in st.session_state:
     st.session_state.clear_inputs = False
 
-# 입력창이 생성되기 전에 비우기 예약 처리
 if st.session_state.clear_inputs:
     st.session_state.nick_input = ""
     st.session_state.msg_input = ""
     st.session_state.clear_inputs = False
 
+
+# --- 금칙어 불러오기 및 강력한 우회 검열 함수 ---
+def load_bad_words():
+    """bad_words.txt 파일에서 금칙어를 읽어옵니다. 파일이 없으면 기본 금칙어 반환"""
+    default_words = [
+        "시발",
+        "ㅅㅂ",
+        "ㅆㅂ",
+        "개새",
+        "병신",
+        "지랄",
+        "새끼",
+        "죽어",
+        "꺼져",
+        "야발",
+    ]
+    try:
+        with open("bad_words.txt", "r", encoding="utf-8") as f:
+            words = [line.strip() for line in f if line.strip()]
+            return words if words else default_words
+    except Exception:
+        return default_words
+
+
+def normalize_text(text):
+    """띄어쓰기, 특수문자, 이모티콘, 기호 우회를 완벽히 차단하기 위한 정규화"""
+    text = text.lower()
+    # 비슷한 모양의 숫자/기호 치환
+    text = text.replace("1", "ㅣ").replace("!", "ㅣ").replace("0", "ㅇ")
+    # 한글(완성형, 자모), 영문, 숫자 외의 모든 공백, 특수문자, 이모티콘, 기호 통째로 제거
+    text = re.sub(r'[^가-힣ㄱ-ㅎㅏ-ㅣa-z0-9]', '', text)
+    return text
+
+
+def contains_profanity(text):
+    """금칙어 포함 여부 확인"""
+    bad_words = load_bad_words()
+    normalized = normalize_text(text)
+
+    for word in bad_words:
+        norm_word = normalize_text(word)
+        if norm_word and norm_word in normalized:
+            return True
+    return False
+
+
 # --- 설정 상수 ---
-MAX_NICKNAME_LEN = 15   # 닉네임 최대 글자 수
-MAX_MESSAGE_LEN = 200   # 한마디 최대 글자 수
-COOLDOWN_SECONDS = 10   # 연속 전송 제한 시간 (초)
+MAX_NICKNAME_LEN = 15
+MAX_MESSAGE_LEN = 200
+COOLDOWN_SECONDS = 10
 
 # 구글 시트 링크 및 웹 앱 URL 불러오기
 try:
@@ -128,7 +174,6 @@ with st.form("mail_form"):
     )
     submitted = st.form_submit_button("마음 보내기 💌", use_container_width=True)
 
-# 전송 성공 시 화면에 알림과 풍선 띄우기
 if st.session_state.send_success:
     st.success("따뜻한 마음이 성공적으로 전달되었습니다! 🎈")
     st.balloons()
@@ -138,25 +183,37 @@ if submitted:
     current_time = time.time()
     elapsed = current_time - st.session_state.last_sent_time
 
-    # [핵심 강화] 쿨타임 검증을 최우선으로 엄격하게 수행하여 연타 차단
+    combined_text = f"{nickname} {message}"
+
     if elapsed < COOLDOWN_SECONDS:
         remain = int(COOLDOWN_SECONDS - elapsed) + 1
-        st.warning(f"도배 방지를 위해 {remain}초 후에 다시 보낼 수 있습니다. 잠시만 기다려 주세요!")
+        st.warning(
+            f"도배 방지를 위해 {remain}초 후에 다시 보낼 수 있습니다. 잠시만"
+            " 기다려 주세요!"
+        )
     elif message.strip() == "":
         st.warning("한마디 내용을 입력해 주세요!")
     elif len(message) > MAX_MESSAGE_LEN or len(nickname) > MAX_NICKNAME_LEN:
         st.warning("허용된 최대 글자 수를 초과했습니다.")
+    elif contains_profanity(combined_text):
+        st.error(
+            "⚠️ 바르고 고운 말을 사용해 주세요! 부적절한 단어나 우회 표현이"
+            " 감지되었습니다."
+        )
     elif not WEBAPP_URL:
         st.error("웹 앱 URL(webapp_url) 설정이 누락되었습니다.")
     else:
         nick_to_send = nickname.strip() if nickname.strip() != "" else "익명"
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # 전송 직후 즉시 락을 걸기 위해 시간 먼저 갱신
         st.session_state.last_sent_time = time.time()
 
         try:
-            payload = {"nickname": nick_to_send, "message": message.strip(), "time": now_str}
+            payload = {
+                "nickname": nick_to_send,
+                "message": message.strip(),
+                "time": now_str,
+            }
             response = requests.post(WEBAPP_URL, json=payload)
 
             if response.status_code == 200:
@@ -164,19 +221,17 @@ if submitted:
                 st.session_state.clear_inputs = True
                 st.rerun()
             else:
-                # 실패 시 락을 다시 풀어줌
                 st.session_state.last_sent_time = 0.0
                 st.error("전송에 실패했습니다. 다시 시도해 주세요.")
         except Exception as e:
             st.session_state.last_sent_time = 0.0
             st.error(f"저장 중 오류 발생: {e}")
 
-# --- 하단 관리자 페이지 (인증 여부에 따라 분기) ---
+# --- 하단 관리자 페이지 ---
 st.markdown("<br><br>", unsafe_allow_html=True)
 ADMIN_PASSWORD = "admin"  # 비밀번호 변경 필요 시 수정
 
 if not st.session_state.is_admin:
-    # 1. 로그인 전: 비밀번호 입력창 표시
     with st.expander("🔒 관리자 페이지 (비밀번호 필요)"):
         with st.form("admin_login_form"):
             input_pw = st.text_input(
@@ -192,16 +247,14 @@ if not st.session_state.is_admin:
                 else:
                     st.error("비밀번호가 올바르지 않습니다.")
 else:
-    # 2. 로그인 완료 후
     st.success("🔓 관리자 인증되었습니다.")
 
-    # 로그아웃 버튼
     if st.button("🔒 로그아웃", use_container_width=True):
         st.session_state.is_admin = False
         st.session_state.current_page = 1
         st.rerun()
 
-    # --- 실시간 동기화 조각 함수 ---
+
     @st.fragment(run_every=2)
     def render_live_mailbox():
         st.markdown('<div class="admin-content">', unsafe_allow_html=True)
@@ -214,7 +267,10 @@ else:
             df = pd.DataFrame(columns=["닉네임", "한마디", "시간"])
 
         if not df.empty and "한마디" in df.columns:
-            valid_df = df[df["한마디"].notna() & (df["한마디"].astype(str).str.strip() != "")].iloc[::-1]
+            valid_df = df[
+                df["한마디"].notna()
+                & (df["한마디"].astype(str).str.strip() != "")
+            ].iloc[::-1]
         else:
             valid_df = pd.DataFrame()
 
@@ -235,7 +291,11 @@ else:
             end_idx = start_idx + ITEMS_PER_PAGE
             page_items = valid_df.iloc[start_idx:end_idx]
 
-            st.caption(f"총 {total_items}개의 마음 중 {start_idx + 1}~{min(end_idx, total_items)}개 표시 중 (페이지 {st.session_state.current_page} / {total_pages})")
+            st.caption(
+                f"총 {total_items}개의 마음 중 {start_idx + 1}~{min(end_idx, total_items)}개"
+                f" 표시 중 (페이지 {st.session_state.current_page} /"
+                f" {total_pages})"
+            )
 
             for index, row in page_items.iterrows():
                 nick = row.get("닉네임", "익명")
@@ -253,30 +313,59 @@ else:
                     unsafe_allow_html=True,
                 )
 
-            # --- 페이지네이션 컨트롤 ---
             if total_pages > 1:
                 st.markdown("---")
                 col1, col2, col3, col4, col5 = st.columns([1, 1, 1.5, 1, 1])
 
                 with col1:
-                    if st.button("⏮ 맨앞", disabled=(st.session_state.current_page == 1), use_container_width=True, key="btn_first"):
+                    if st.button(
+                        "⏮ 맨앞",
+                        disabled=(st.session_state.current_page == 1),
+                        use_container_width=True,
+                        key="btn_first",
+                    ):
                         st.session_state.current_page = 1
 
                 with col2:
-                    if st.button("◀ 이전", disabled=(st.session_state.current_page == 1), use_container_width=True, key="btn_prev"):
+                    if st.button(
+                        "◀ 이전",
+                        disabled=(st.session_state.current_page == 1),
+                        use_container_width=True,
+                        key="btn_prev",
+                    ):
                         st.session_state.current_page -= 1
 
                 with col3:
-                    st.markdown(f"<h4 style='text-align: center; margin: 0; padding-top: 5px;'>{st.session_state.current_page} / {total_pages}</h4>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"<h4 style='text-align: center; margin: 0; padding-top:"
+                        f" 5px;'>{st.session_state.current_page} /"
+                        f" {total_pages}</h4>",
+                        unsafe_allow_html=True,
+                    )
 
                 with col4:
-                    if st.button("다음 ▶", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="btn_next"):
+                    if st.button(
+                        "다음 ▶",
+                        disabled=(
+                            st.session_state.current_page == total_pages
+                        ),
+                        use_container_width=True,
+                        key="btn_next",
+                    ):
                         st.session_state.current_page += 1
 
                 with col5:
-                    if st.button("맨뒤 ⏭", disabled=(st.session_state.current_page == total_pages), use_container_width=True, key="btn_last"):
+                    if st.button(
+                        "맨뒤 ⏭",
+                        disabled=(
+                            st.session_state.current_page == total_pages
+                        ),
+                        use_container_width=True,
+                        key="btn_last",
+                    ):
                         st.session_state.current_page = total_pages
 
         st.markdown("</div>", unsafe_allow_html=True)
+
 
     render_live_mailbox()
