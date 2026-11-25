@@ -82,7 +82,7 @@ if "last_sent_time" not in st.session_state:
 if "clear_inputs" not in st.session_state:
     st.session_state.clear_inputs = False
 
-# [핵심 해결] 위젯이 생성되기 전에 성공 여부에 따라 입력값을 미리 비워줍니다.
+# 입력창이 생성되기 전에 비우기 예약 처리
 if st.session_state.clear_inputs:
     st.session_state.nick_input = ""
     st.session_state.msg_input = ""
@@ -138,6 +138,7 @@ if submitted:
     current_time = time.time()
     elapsed = current_time - st.session_state.last_sent_time
 
+    # [핵심 강화] 쿨타임 검증을 최우선으로 엄격하게 수행하여 연타 차단
     if elapsed < COOLDOWN_SECONDS:
         remain = int(COOLDOWN_SECONDS - elapsed) + 1
         st.warning(f"도배 방지를 위해 {remain}초 후에 다시 보낼 수 있습니다. 잠시만 기다려 주세요!")
@@ -151,18 +152,23 @@ if submitted:
         nick_to_send = nickname.strip() if nickname.strip() != "" else "익명"
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # 전송 직후 즉시 락을 걸기 위해 시간 먼저 갱신
+        st.session_state.last_sent_time = time.time()
+
         try:
             payload = {"nickname": nick_to_send, "message": message.strip(), "time": now_str}
             response = requests.post(WEBAPP_URL, json=payload)
 
             if response.status_code == 200:
-                st.session_state.last_sent_time = time.time()
                 st.session_state.send_success = True
-                st.session_state.clear_inputs = True  # 다음 렌더링 때 입력창이 안전하게 비워지도록 예약
+                st.session_state.clear_inputs = True
                 st.rerun()
             else:
+                # 실패 시 락을 다시 풀어줌
+                st.session_state.last_sent_time = 0.0
                 st.error("전송에 실패했습니다. 다시 시도해 주세요.")
         except Exception as e:
+            st.session_state.last_sent_time = 0.0
             st.error(f"저장 중 오류 발생: {e}")
 
 # --- 하단 관리자 페이지 (인증 여부에 따라 분기) ---
