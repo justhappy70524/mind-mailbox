@@ -101,11 +101,10 @@ def load_bad_words():
 
 
 def normalize_text(text):
-    """띄어쓰기, 특수문자, 이모티콘, 기호 우회를 완벽히 차단하기 위한 정규화"""
+    """띄어쓰기, 특수문자, 숫자, 이모티콘, 기호 우회를 완벽히 차단하기 위한 정규화"""
     text = text.lower()
-    text = text.replace("1", "ㅣ").replace("!", "ㅣ").replace("0", "ㅇ")
-    # 한글, 영문, 숫자 외의 공백, 특수문자, 이모티콘 제거
-    text = re.sub(r'[^가-힣ㄱ-ㅎㅏ-ㅣa-z0-9]', '', text)
+    # 숫자(0-9) 및 특수문자, 공백을 모두 제거 (한글, 영문만 허용)
+    text = re.sub(r'[^가-힣ㄱ-ㅎㅏ-ㅣa-z]', '', text)
     return text
 
 
